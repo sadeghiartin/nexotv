@@ -1,5 +1,7 @@
 import type { AddonConfig } from '../types/config'
 
+declare const __BACKEND_PORT__: string
+
 function encodeConfigBase64Url(config: AddonConfig): string {
   const json = JSON.stringify(config)
   let b64 = btoa(unescape(encodeURIComponent(json)))
@@ -30,8 +32,9 @@ export function useConfigToken(appendDetail: (line: string) => void) {
 
     // In dev mode the frontend runs on a different port (5173) from the backend (7000).
     // Manifest and Stremio URLs must point to the backend, not the Vite dev server.
+    const backendPort = typeof __BACKEND_PORT__ !== 'undefined' ? __BACKEND_PORT__ : '7000'
     const backendOrigin = import.meta.env.DEV
-      ? `${window.location.protocol}//${window.location.hostname}:7000`
+      ? `${window.location.protocol}//${window.location.hostname}:${backendPort}`
       : window.location.origin
     const manifestUrl = `${backendOrigin}/${token}/manifest.json`
     const stremioUrl = manifestUrl.replace(/^https?:\/\//, 'stremio://')

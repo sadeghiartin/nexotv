@@ -1,5 +1,7 @@
 import { ref } from 'vue'
 
+declare const __BACKEND_PORT__: string
+
 const POLL_INTERVAL_MS = 1500
 const MAX_WAIT_MS = 90000
 const PROGRESS_ESTIMATE_MS = 45000
@@ -71,8 +73,9 @@ export function useManifestPoll() {
       setProgress(synthetic, progressMessage(elapsed))
     }
     // In dev, use absolute URL because Vite cannot proxy /:token/* dynamically
+    const backendPort = typeof __BACKEND_PORT__ !== 'undefined' ? __BACKEND_PORT__ : '7000'
     const pollUrl = import.meta.env.DEV
-      ? `http://localhost:7000${new URL(manifestUrl.value).pathname}?_=${Date.now()}`
+      ? `http://localhost:${backendPort}${new URL(manifestUrl.value).pathname}?_=${Date.now()}`
       : `${manifestUrl.value}?_=${Date.now()}`
     fetch(pollUrl, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
