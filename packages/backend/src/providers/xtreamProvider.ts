@@ -30,9 +30,11 @@ export async function fetchData(addonInstance: any) {
     const liveHeaders: Record<string, string> = {};
     if (addonInstance.xtreamEtag) liveHeaders['If-None-Match'] = addonInstance.xtreamEtag;
 
-    const [liveResp, liveCatsResp] = await Promise.all([
+    const [liveResp, liveCatsResp, vodResp, vodCatsResp] = await Promise.all([
         withTimeout(`${base}&action=get_live_streams`, { headers: liveHeaders }, env.FETCH_TIMEOUT_MS),
-        withTimeout(`${base}&action=get_live_categories`, {}, env.FETCH_TIMEOUT_MS).catch(() => null)
+        withTimeout(`${base}&action=get_live_categories`, {}, env.FETCH_TIMEOUT_MS).catch(() => null),
+        withTimeout(`${base}&action=get_vod_streams`, {}, env.FETCH_TIMEOUT_MS).catch(() => null),
+        withTimeout(`${base}&action=get_vod_categories`, {}, env.FETCH_TIMEOUT_MS).catch(() => null)
     ]);
 
     if (liveResp.status === 304) {
@@ -44,6 +46,8 @@ export async function fetchData(addonInstance: any) {
     addonInstance.xtreamEtag = liveResp.headers.get('etag') ?? null;
 
     addonInstance.channels = [];
+    addonInstance.movies = [];
+    addonInstance.movieMap = new Map();
     addonInstance.epgData = {};
 
     const live = await liveResp.json();
@@ -78,6 +82,46 @@ export async function fetchData(addonInstance: any) {
             }
         };
     });
+
+    let vodCatMap: Record<string, string> = {};
+    try {
+        if (vodCatsResp && vodCatsResp.ok) {
+            const arr = await vodCatsResp.json();
+            if (Array.isArray(arr)) {
+                for (const c of arr) {
+                    if (c && c.category_id && c.category_name)
+                        vodCatMap[c.category_id] = c.category_name;
+                }
+            }
+        }
+    } catch { /* ignore */ }
+
+    let vod: any[] = [];
+    try {
+        if (vodResp && vodResp.ok) {
+            const parsed = await vodResp.json();
+            vod = Array.isArray(parsed) ? parsed : [];
+        }
+    } catch { /* ignore */ }
+
+    addonInstance.movies = vod.map((s: any) => {
+        const cat = vodCatMap[s.category_id] || s.category_name || s.category_id || 'Movie';
+        const ext = s.container_extension || 'mp4';
+        return {
+            id: `xc${addonInstance.idPrefix}_m_${s.stream_id}`,
+            name: s.name,
+            type: 'movie',
+            url: `${xtreamUrl}/movie/${xtreamUsername}/${xtreamPassword}/${s.stream_id}.${ext}`,
+            logo: s.stream_icon,
+            category: cat,
+            attributes: {
+                'tvg-logo': s.stream_icon,
+                'group-title': cat
+            }
+        };
+    });
+
+    addonInstance.movieMap = new Map(addonInstance.movies.map((m: any) => [m.id, m]));
 
     if (config.enableEpg) {
         const customEpgUrl = config.epgUrl && typeof config.epgUrl === 'string' && config.epgUrl.trim() ? config.epgUrl.trim() : null;
