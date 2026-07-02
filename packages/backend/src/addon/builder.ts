@@ -55,9 +55,11 @@ async function createAddon(config: AddonConfig) {
                     items = await addonInstance.getChannelsForCatalog();
                 } else if (args.type === 'movie' && args.id === 'iptv_movies') {
                     items = await addonInstance.getMoviesForCatalog();
+                } else if (args.type === 'series' && args.id === 'iptv_series') {
+                    items = await addonInstance.getSeriesForCatalog();
                 }
                 const extra = args.extra || {};
-                if (extra.genre && extra.genre !== 'All Channels' && extra.genre !== 'All Movies') {
+                if (extra.genre && extra.genre !== 'All Channels' && extra.genre !== 'All Movies' && extra.genre !== 'All Series') {
                     items = items.filter((i: any) =>
                         (i.category && i.category === extra.genre) ||
                         (i.attributes && i.attributes['group-title'] === extra.genre)

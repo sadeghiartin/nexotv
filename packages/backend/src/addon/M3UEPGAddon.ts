@@ -578,6 +578,11 @@ export class M3UEPGAddon {
         await this.ensureDataLoaded();
         return this.movies;
     }
+
+    async getSeriesForCatalog() {
+        await this.ensureDataLoaded();
+        return this.series;
+    }
 }
 
 export { CACHE_ENABLED };
