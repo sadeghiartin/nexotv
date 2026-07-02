@@ -57,7 +57,7 @@
             subscription, or any M3U playlist URL.</p>
           <ul class="feature-list">
             <li><strong>IPTV-org</strong> – thousands of free public channels, no credentials needed.</li>
-            <li><strong>Xtream API</strong> – connects your subscription panel (live TV only).</li>
+            <li><strong>Xtream API</strong> – connects your subscription panel (live TV & VOD movies).</li>
             <li><strong>M3U / M3U+</strong> – paste any playlist URL; EPG auto-detected from header.</li>
             <li><strong>EPG</strong> – panel XMLTV, custom XMLTV URL, or auto-detected.</li>
             <li><strong>EPG offset</strong> – adjusts programme times for timezone correction.</li>
