@@ -162,6 +162,7 @@ export class M3UEPGAddon {
         if (!CACHE_ENABLED) return;
         sqliteCache.setRaw('addon:channels:' + this.cacheKey, {
             channels: this.channels,
+            movies: this.movies,
             lastUpdate: this.lastUpdate,
             m3uEtag: this.m3uEtag ?? null,
             m3uLastModified: this.m3uLastModified ?? null,
@@ -169,7 +170,7 @@ export class M3UEPGAddon {
             xtreamEtag: this.xtreamEtag ?? null,
             lastEpgUpdate: this.lastEpgUpdate ?? null,
         }, this.cacheTtl);
-        this.log.debug('Channels saved to cache', { count: this.channels.length });
+        this.log.debug('Channels saved to cache', { count: this.channels.length, moviesCount: this.movies.length });
     }
 
     async loadChannelsFromCache() {
@@ -178,13 +179,15 @@ export class M3UEPGAddon {
         if (cached) {
             this.channels = cached.channels || [];
             this.channelMap = new Map(this.channels.map(c => [c.id, c]));
+            this.movies = cached.movies || [];
+            this.movieMap = new Map(this.movies.map(m => [m.id, m]));
             this.lastUpdate = cached.lastUpdate || 0;
             this.m3uEtag = cached.m3uEtag ?? null;
             this.m3uLastModified = cached.m3uLastModified ?? null;
             this.iptvOrgEtag = cached.iptvOrgEtag ?? null;
             this.xtreamEtag = cached.xtreamEtag ?? null;
             this.lastEpgUpdate = cached.lastEpgUpdate ?? null;
-            this.log.debug('Channels loaded from cache', { count: this.channels.length });
+            this.log.debug('Channels loaded from cache', { count: this.channels.length, moviesCount: this.movies.length });
         }
     }
 
