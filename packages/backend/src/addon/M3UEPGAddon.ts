@@ -89,6 +89,8 @@ export class M3UEPGAddon {
     channelMap: Map<string, any>;
     movies: any[];
     movieMap: Map<string, any>;
+    series: any[];
+    seriesMap: Map<string, any>;
     epgData: Record<string, any[]>;
     lastUpdate: number;
     m3uEtag: string | null;
@@ -119,6 +121,8 @@ export class M3UEPGAddon {
         this.channelMap = new Map();
         this.movies = [];
         this.movieMap = new Map();
+        this.series = [];
+        this.seriesMap = new Map();
         this.epgData = {};
         this.lastUpdate = 0;
         this.m3uEtag = null;
@@ -163,6 +167,7 @@ export class M3UEPGAddon {
         sqliteCache.setRaw('addon:channels:' + this.cacheKey, {
             channels: this.channels,
             movies: this.movies,
+            series: this.series,
             lastUpdate: this.lastUpdate,
             m3uEtag: this.m3uEtag ?? null,
             m3uLastModified: this.m3uLastModified ?? null,
@@ -170,7 +175,7 @@ export class M3UEPGAddon {
             xtreamEtag: this.xtreamEtag ?? null,
             lastEpgUpdate: this.lastEpgUpdate ?? null,
         }, this.cacheTtl);
-        this.log.debug('Channels saved to cache', { count: this.channels.length, moviesCount: this.movies.length });
+        this.log.debug('Channels saved to cache', { count: this.channels.length, moviesCount: this.movies.length, seriesCount: this.series.length });
     }
 
     async loadChannelsFromCache() {
@@ -181,13 +186,15 @@ export class M3UEPGAddon {
             this.channelMap = new Map(this.channels.map(c => [c.id, c]));
             this.movies = cached.movies || [];
             this.movieMap = new Map(this.movies.map(m => [m.id, m]));
+            this.series = Array.isArray(cached.series) ? cached.series : [];
+            this.seriesMap = new Map(this.series.map(s => [s.id, s]));
             this.lastUpdate = cached.lastUpdate || 0;
             this.m3uEtag = cached.m3uEtag ?? null;
             this.m3uLastModified = cached.m3uLastModified ?? null;
             this.iptvOrgEtag = cached.iptvOrgEtag ?? null;
             this.xtreamEtag = cached.xtreamEtag ?? null;
             this.lastEpgUpdate = cached.lastEpgUpdate ?? null;
-            this.log.debug('Channels loaded from cache', { count: this.channels.length, moviesCount: this.movies.length });
+            this.log.debug('Channels loaded from cache', { count: this.channels.length, moviesCount: this.movies.length, seriesCount: this.series.length });
         }
     }
 
@@ -252,9 +259,29 @@ export class M3UEPGAddon {
                 genreExtra.options = groups;
             }
         }
+
+        const seriesCatalog = this.manifestRef.catalogs.find((c: any) => c.id === 'iptv_series');
+        if (seriesCatalog) {
+            const groups = [
+                ...new Set(
+                    this.series
+                        .map(s => s.category || s.attributes?.['group-title'])
+                        .filter(Boolean)
+                        .map((s: string) => s.trim())
+                )
+            ].sort((a: any, b: any) => a.localeCompare(b));
+            if (!groups.includes('All Series')) groups.unshift('All Series');
+            seriesCatalog.genres = groups;
+
+            const genreExtra = seriesCatalog.extra.find((e: any) => e.name === 'genre');
+            if (genreExtra) {
+                genreExtra.options = groups;
+            }
+        }
         this.log.debug('Catalog genres built', {
             tvGenres: tvCatalog?.genres?.length || 0,
-            movieGenres: movieCatalog?.genres?.length || 0
+            movieGenres: movieCatalog?.genres?.length || 0,
+            seriesGenres: seriesCatalog?.genres?.length || 0
         });
     }
 
@@ -374,19 +401,19 @@ export class M3UEPGAddon {
 
     generateMetaPreview(item: any) {
         const logoUrl = this.deriveFallbackLogoUrl(item);
-        const isMovie = item.type === 'movie';
+        const type = item.type || 'tv';
         return {
             id: item.id,
-            type: isMovie ? 'movie' : 'tv',
+            type,
             name: item.name,
-            description: isMovie ? '🎬 Movie VOD' : '📡 Live Channel',
+            description: type === 'movie' ? '🎬 Movie VOD' : (type === 'series' ? '📺 Series VOD' : '📡 Live Channel'),
             poster: logoUrl,
             background: logoUrl,
             posterShape: 'poster',
             genres: item.category
                 ? [item.category]
-                : (item.attributes?.['group-title'] ? [item.attributes['group-title']] : (isMovie ? ['Movies'] : ['Live TV'])),
-            runtime: isMovie ? 'Movie' : 'Live'
+                : (item.attributes?.['group-title'] ? [item.attributes['group-title']] : (type === 'movie' ? ['Movies'] : (type === 'series' ? ['Series'] : ['Live TV']))),
+            runtime: type === 'movie' ? 'Movie' : (type === 'series' ? 'Series' : 'Live')
         };
     }
 

@@ -7,7 +7,7 @@ export function createManifest(idPrefix?: string, catalogName?: string) {
         name: env.ADDON_NAME,
         description: env.ADDON_DESCRIPTION,
         resources: ['catalog', 'stream', 'meta'],
-        types: ['tv', 'movie'],
+        types: ['tv', 'movie', 'series'],
         catalogs: [
             {
                 type: 'tv',
@@ -24,6 +24,17 @@ export function createManifest(idPrefix?: string, catalogName?: string) {
                 type: 'movie',
                 id: 'iptv_movies',
                 name: catalogName ? `${catalogName} Movies` : `${env.ADDON_NAME} Movies`,
+                extra: [
+                    { name: 'genre', isRequired: false, options: [] },
+                    { name: 'search', isRequired: false },
+                    { name: 'skip' }
+                ],
+                genres: []
+            },
+            {
+                type: 'series',
+                id: 'iptv_series',
+                name: catalogName ? `${catalogName} Series` : `${env.ADDON_NAME} Series`,
                 extra: [
                     { name: 'genre', isRequired: false, options: [] },
                     { name: 'search', isRequired: false },

@@ -30,11 +30,13 @@ export async function fetchData(addonInstance: any) {
     const liveHeaders: Record<string, string> = {};
     if (addonInstance.xtreamEtag) liveHeaders['If-None-Match'] = addonInstance.xtreamEtag;
 
-    const [liveResp, liveCatsResp, vodResp, vodCatsResp] = await Promise.all([
+    const [liveResp, liveCatsResp, vodResp, vodCatsResp, seriesResp, seriesCatsResp] = await Promise.all([
         withTimeout(`${base}&action=get_live_streams`, { headers: liveHeaders }, env.FETCH_TIMEOUT_MS),
         withTimeout(`${base}&action=get_live_categories`, {}, env.FETCH_TIMEOUT_MS).catch(() => null),
         withTimeout(`${base}&action=get_vod_streams`, {}, env.FETCH_TIMEOUT_MS).catch(() => null),
-        withTimeout(`${base}&action=get_vod_categories`, {}, env.FETCH_TIMEOUT_MS).catch(() => null)
+        withTimeout(`${base}&action=get_vod_categories`, {}, env.FETCH_TIMEOUT_MS).catch(() => null),
+        withTimeout(`${base}&action=get_series`, {}, env.FETCH_TIMEOUT_MS).catch(() => null),
+        withTimeout(`${base}&action=get_series_categories`, {}, env.FETCH_TIMEOUT_MS).catch(() => null)
     ]);
 
     if (liveResp.status === 304) {
@@ -48,6 +50,8 @@ export async function fetchData(addonInstance: any) {
     addonInstance.channels = [];
     addonInstance.movies = [];
     addonInstance.movieMap = new Map();
+    addonInstance.series = [];
+    addonInstance.seriesMap = new Map();
     addonInstance.epgData = {};
 
     const live = await liveResp.json();
@@ -122,6 +126,44 @@ export async function fetchData(addonInstance: any) {
     });
 
     addonInstance.movieMap = new Map(addonInstance.movies.map((m: any) => [m.id, m]));
+
+    let seriesCatMap: Record<string, string> = {};
+    try {
+        if (seriesCatsResp && seriesCatsResp.ok) {
+            const arr = await seriesCatsResp.json();
+            if (Array.isArray(arr)) {
+                for (const c of arr) {
+                    if (c && c.category_id && c.category_name)
+                        seriesCatMap[c.category_id] = c.category_name;
+                }
+            }
+        }
+    } catch { /* ignore */ }
+
+    let seriesData: any[] = [];
+    try {
+        if (seriesResp && seriesResp.ok) {
+            const parsed = await seriesResp.json();
+            seriesData = Array.isArray(parsed) ? parsed : [];
+        }
+    } catch { /* ignore */ }
+
+    addonInstance.series = seriesData.map((s: any) => {
+        const cat = seriesCatMap[s.category_id] || s.category_name || s.category_id || 'Series';
+        return {
+            id: `xc${addonInstance.idPrefix}_s_${s.series_id}`,
+            name: s.name,
+            type: 'series',
+            logo: s.cover,
+            category: cat,
+            attributes: {
+                'tvg-logo': s.cover,
+                'group-title': cat
+            }
+        };
+    });
+
+    addonInstance.seriesMap = new Map(addonInstance.series.map((s: any) => [s.id, s]));
 
     if (config.enableEpg) {
         const customEpgUrl = config.epgUrl && typeof config.epgUrl === 'string' && config.epgUrl.trim() ? config.epgUrl.trim() : null;
