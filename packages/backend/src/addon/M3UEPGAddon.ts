@@ -389,7 +389,7 @@ export class M3UEPGAddon {
 
     async getStreams(id: string) {
         await this.ensureDataLoaded();
-        const item = this.channelMap.get(id);
+        const item = this.channelMap.get(id) || this.movieMap.get(id);
         if (!item) return [];
 
         const reqHeaders: Record<string, string> = {};
@@ -398,6 +398,14 @@ export class M3UEPGAddon {
         const behaviorHints = Object.keys(reqHeaders).length
             ? { notWebReady: true, proxyHeaders: { request: reqHeaders } }
             : { notWebReady: true };
+
+        if (item.type === 'movie') {
+            return [{
+                url: item.url,
+                title: `${item.name} - Movie`,
+                behaviorHints
+            }];
+        }
 
         if (item.urls && item.urls.length > 0) {
             return item.urls.map((url: string, index: number) => ({
