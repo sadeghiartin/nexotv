@@ -230,7 +230,29 @@ export class M3UEPGAddon {
                 genreExtra.options = groups;
             }
         }
-        this.log.debug('Catalog genres built', { tvGenres: tvCatalog?.genres?.length || 0 });
+
+        const movieCatalog = this.manifestRef.catalogs.find((c: any) => c.id === 'iptv_movies');
+        if (movieCatalog) {
+            const groups = [
+                ...new Set(
+                    this.movies
+                        .map(m => m.category || m.attributes?.['group-title'])
+                        .filter(Boolean)
+                        .map((s: string) => s.trim())
+                )
+            ].sort((a: any, b: any) => a.localeCompare(b));
+            if (!groups.includes('All Movies')) groups.unshift('All Movies');
+            movieCatalog.genres = groups;
+
+            const genreExtra = movieCatalog.extra.find((e: any) => e.name === 'genre');
+            if (genreExtra) {
+                genreExtra.options = groups;
+            }
+        }
+        this.log.debug('Catalog genres built', {
+            tvGenres: tvCatalog?.genres?.length || 0,
+            movieGenres: movieCatalog?.genres?.length || 0
+        });
     }
 
     async updateData(force = false) {
@@ -349,18 +371,19 @@ export class M3UEPGAddon {
 
     generateMetaPreview(item: any) {
         const logoUrl = this.deriveFallbackLogoUrl(item);
+        const isMovie = item.type === 'movie';
         return {
             id: item.id,
-            type: 'tv',
+            type: isMovie ? 'movie' : 'tv',
             name: item.name,
-            description: '📡 Live Channel',
+            description: isMovie ? '🎬 Movie VOD' : '📡 Live Channel',
             poster: logoUrl,
             background: logoUrl,
             posterShape: 'poster',
             genres: item.category
                 ? [item.category]
-                : (item.attributes?.['group-title'] ? [item.attributes['group-title']] : ['Live TV']),
-            runtime: 'Live'
+                : (item.attributes?.['group-title'] ? [item.attributes['group-title']] : (isMovie ? ['Movies'] : ['Live TV'])),
+            runtime: isMovie ? 'Movie' : 'Live'
         };
     }
 
@@ -400,6 +423,23 @@ export class M3UEPGAddon {
 
     async getDetailedMeta(id: string) {
         await this.ensureDataLoaded();
+        const movieItem = this.movieMap.get(id);
+        if (movieItem) {
+            const logoUrl = this.deriveFallbackLogoUrl(movieItem);
+            return {
+                id: movieItem.id,
+                type: 'movie',
+                name: movieItem.name,
+                poster: logoUrl,
+                background: logoUrl,
+                posterShape: 'poster',
+                description: `🎬 MOVIE: ${movieItem.name}\n\nCategory: ${movieItem.category || 'Movie'}`,
+                genres: movieItem.category
+                    ? [movieItem.category]
+                    : (movieItem.attributes?.['group-title'] ? [movieItem.attributes['group-title']] : ['Movies']),
+                runtime: 'Movie'
+            };
+        }
         await this.ensureEpgLoaded();
         const item = this.channelMap.get(id);
         if (!item) return null;
@@ -494,6 +534,11 @@ export class M3UEPGAddon {
     async getChannelsForCatalog() {
         await this.ensureDataLoaded();
         return this.channels;
+    }
+
+    async getMoviesForCatalog() {
+        await this.ensureDataLoaded();
+        return this.movies;
     }
 }
 

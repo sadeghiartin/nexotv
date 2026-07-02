@@ -50,10 +50,14 @@ async function createAddon(config: AddonConfig) {
             try {
                 await addonInstance.refreshOnFirstCatalogRequest();
                 const catalogIds = ['iptv_channels', 'iptv_org'];
-                const channels = await addonInstance.getChannelsForCatalog();
-                let items = args.type === 'tv' && catalogIds.includes(args.id) ? channels : [];
+                let items: any[] = [];
+                if (args.type === 'tv' && catalogIds.includes(args.id)) {
+                    items = await addonInstance.getChannelsForCatalog();
+                } else if (args.type === 'movie' && args.id === 'iptv_movies') {
+                    items = await addonInstance.getMoviesForCatalog();
+                }
                 const extra = args.extra || {};
-                if (extra.genre && extra.genre !== 'All Channels') {
+                if (extra.genre && extra.genre !== 'All Channels' && extra.genre !== 'All Movies') {
                     items = items.filter((i: any) =>
                         (i.category && i.category === extra.genre) ||
                         (i.attributes && i.attributes['group-title'] === extra.genre)
