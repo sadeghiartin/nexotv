@@ -461,6 +461,58 @@ export class M3UEPGAddon {
 
     async getDetailedMeta(id: string) {
         await this.ensureDataLoaded();
+        const seriesItem = this.seriesMap.get(id);
+        if (seriesItem) {
+            const logoUrl = this.deriveFallbackLogoUrl(seriesItem);
+            // Compatibility with caches created before Phase 3C.
+            // Remove after cache schema version bump.
+            const seriesId = seriesItem.seriesId || id.match(/_s_([^_]+)/)?.[1];
+            const details = await this.getSeriesInfoCached(seriesId);
+            const videos: any[] = [];
+
+            if (details && details.episodes) {
+                for (const sKey of Object.keys(details.episodes)) {
+                    const seasonNum = parseInt(sKey, 10) || 1;
+                    const episodesList = details.episodes[sKey];
+                    if (Array.isArray(episodesList)) {
+                        for (const ep of episodesList) {
+                            const epNum = parseInt(ep.episode_num || ep.episode || '0', 10) || 0;
+                            const epId = (ep.id || ep.stream_id || '').toString().trim();
+                            if (!epId) continue;
+
+                            videos.push({
+                                id: `xc${this.idPrefix}_s_${seriesId}_e_${epId}`,
+                                season: seasonNum,
+                                episode: epNum,
+                                title: ep.title || `Season ${seasonNum} - Episode ${epNum}`,
+                                released: ep.info?.releasedate || undefined
+                            });
+                        }
+                    }
+                }
+            }
+
+            videos.sort((a, b) => a.season - b.season || a.episode - b.episode);
+
+            const info = details?.info;
+            const rawRating = parseFloat(info?.rating);
+
+            return {
+                id: seriesItem.id,
+                type: 'series',
+                name: seriesItem.name,
+                poster: logoUrl,
+                background: logoUrl,
+                posterShape: 'poster',
+                description: info?.plot || `📺 SERIES: ${seriesItem.name}\n\nCategory: ${seriesItem.category || 'Series'}`,
+                genres: seriesItem.category
+                    ? [seriesItem.category]
+                    : (seriesItem.attributes?.['group-title'] ? [seriesItem.attributes['group-title']] : ['Series']),
+                runtime: 'Series',
+                rating: isNaN(rawRating) ? undefined : rawRating,
+                videos
+            };
+        }
         const movieItem = this.movieMap.get(id);
         if (movieItem) {
             const logoUrl = this.deriveFallbackLogoUrl(movieItem);
@@ -582,6 +634,31 @@ export class M3UEPGAddon {
     async getSeriesForCatalog() {
         await this.ensureDataLoaded();
         return this.series;
+    }
+
+    async getSeriesInfoCached(seriesId: string): Promise<any> {
+        const cacheKey = `addon:series_info:${this.cacheKey}:${seriesId}`;
+        if (CACHE_ENABLED) {
+            const cached = sqliteCache.get(cacheKey);
+            if (cached) {
+                this.log.debug('Series info loaded from cache', { seriesId });
+                return cached;
+            }
+        }
+        this.log.debug('Series info cache miss, fetching from provider', { seriesId });
+        const providerModule = PROVIDER_MAP[this.providerName];
+        if (providerModule && (providerModule as any).fetchSeriesInfo) {
+            try {
+                const details = await (providerModule as any).fetchSeriesInfo(this, seriesId);
+                if (CACHE_ENABLED && details) {
+                    sqliteCache.set(cacheKey, details, this.cacheTtl);
+                }
+                return details;
+            } catch (e: any) {
+                this.log.error('Failed to fetch series info', { seriesId, error: e.message });
+            }
+        }
+        return null;
     }
 }
 

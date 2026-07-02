@@ -152,6 +152,7 @@ export async function fetchData(addonInstance: any) {
         const cat = seriesCatMap[s.category_id] || s.category_name || s.category_id || 'Series';
         return {
             id: `xc${addonInstance.idPrefix}_s_${s.series_id}`,
+            seriesId: s.series_id,
             name: s.name,
             type: 'series',
             logo: s.cover,
@@ -199,4 +200,18 @@ export async function fetchData(addonInstance: any) {
             });
         }
     }
+}
+
+export async function fetchSeriesInfo(addonInstance: any, seriesId: string) {
+    const { config } = addonInstance;
+    const { xtreamUrl, xtreamUsername, xtreamPassword } = config;
+    if (!xtreamUrl || !xtreamUsername || !xtreamPassword) {
+        throw new Error('Xtream credentials incomplete');
+    }
+    await validatePublicUrl(xtreamUrl);
+    const base = `${xtreamUrl}/player_api.php?username=${encodeURIComponent(xtreamUsername)}&password=${encodeURIComponent(xtreamPassword)}`;
+    const url = `${base}&action=get_series_info&series_id=${seriesId}`;
+    const resp = await withTimeout(url, {}, env.FETCH_TIMEOUT_MS);
+    if (!resp.ok) throw new Error(`Xtream series info fetch failed: HTTP ${resp.status}`);
+    return await resp.json();
 }
