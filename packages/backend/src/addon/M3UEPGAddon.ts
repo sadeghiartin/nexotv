@@ -87,6 +87,8 @@ export class M3UEPGAddon {
     updateInterval: number;
     channels: any[];
     channelMap: Map<string, any>;
+    movies: any[];
+    movieMap: Map<string, any>;
     epgData: Record<string, any[]>;
     lastUpdate: number;
     m3uEtag: string | null;
@@ -115,6 +117,8 @@ export class M3UEPGAddon {
         this.updateInterval = env.UPDATE_INTERVAL_MS;
         this.channels = [];
         this.channelMap = new Map();
+        this.movies = [];
+        this.movieMap = new Map();
         this.epgData = {};
         this.lastUpdate = 0;
         this.m3uEtag = null;
