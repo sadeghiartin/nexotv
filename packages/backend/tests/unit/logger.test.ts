@@ -62,4 +62,39 @@ describe('makeLogger()', () => {
     log.debug('secret');
     expect(logSpy).not.toHaveBeenCalled();
   });
+
+  describe('redactSensitive()', () => {
+    it('redacts query parameter credentials in strings', () => {
+      const log = makeLogger();
+      log.info('Fetching https://provider.com/xmltv.php?username=myuser&password=mypassword&type=m3u');
+      const output = logSpy.mock.calls[0][1] as string;
+      expect(output).toBe('Fetching https://provider.com/xmltv.php?username=[REDACTED]&password=[REDACTED]&type=m3u');
+    });
+
+    it('redacts path credentials in series/movie stream URLs', () => {
+      const log = makeLogger();
+      log.info('Stream url is http://server:8080/series/myuser/mypassword/101.mkv');
+      const output = logSpy.mock.calls[0][1] as string;
+      expect(output).toBe('Stream url is http://server:8080/series/[REDACTED]/[REDACTED]/101.mkv');
+    });
+
+    it('recursively redacts credentials inside objects and arrays', () => {
+      const log = makeLogger();
+      log.info({
+        url: 'http://server:8080/movie/myuser/mypassword/555.mp4',
+        nested: {
+          username: 'myuser',
+          secretKey: 'mykey',
+          cleanField: 'clean'
+        },
+        items: ['http://xmltv.php?password=123']
+      });
+      const obj = logSpy.mock.calls[0][1] as any;
+      expect(obj.url).toBe('http://server:8080/movie/[REDACTED]/[REDACTED]/555.mp4');
+      expect(obj.nested.username).toBe('[REDACTED]');
+      expect(obj.nested.secretKey).toBe('[REDACTED]');
+      expect(obj.nested.cleanField).toBe('clean');
+      expect(obj.items[0]).toBe('http://xmltv.php?password=[REDACTED]');
+    });
+  });
 });

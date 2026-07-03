@@ -2,10 +2,10 @@ import env from '../config/env';
 
 export function createManifest(idPrefix?: string, catalogName?: string) {
     return {
-        id: 'community.nexotv',
-        version: '2.0.0',
+        id: idPrefix ? `community.nexotv.${idPrefix}` : 'community.nexotv',
+        version: '2.0.1',
         name: env.ADDON_NAME,
-        description: env.ADDON_DESCRIPTION,
+        description: `[v2.0.1] ${env.ADDON_DESCRIPTION}`,
         resources: ['catalog', 'stream', 'meta'],
         types: ['tv', 'movie', 'series'],
         catalogs: [

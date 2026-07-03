@@ -433,7 +433,7 @@ export class M3UEPGAddon {
                         const userAgent = seriesItem?.userAgent || this.config.globalUserAgent;
                         const referrer = seriesItem?.referrer;
                         if (userAgent) reqHeaders['User-Agent'] = userAgent;
-                        if (referrer)  reqHeaders['Referer']    = referrer;
+                        if (referrer) reqHeaders['Referer'] = referrer;
 
                         const behaviorHints = Object.keys(reqHeaders).length
                             ? { notWebReady: true, proxyHeaders: { request: reqHeaders } }
@@ -504,31 +504,15 @@ export class M3UEPGAddon {
                 // Remove after cache schema version bump.
                 const seriesId = seriesItem.seriesId || parsed.seriesId;
                 const details = await this.getSeriesInfoCached(seriesId);
-                const videos: any[] = [];
+                const videos = xtreamProvider.normalizeSeriesVideos(details, seriesId, this.idPrefix).map(({ episodeStreamId, ...rest }) => rest);
 
-                if (details && details.episodes) {
-                    for (const sKey of Object.keys(details.episodes)) {
-                        const seasonNum = parseInt(sKey, 10) || 1;
-                        const episodesList = details.episodes[sKey];
-                        if (Array.isArray(episodesList)) {
-                            for (const ep of episodesList) {
-                                const epNum = parseInt(ep.episode_num || ep.episode || '0', 10) || 0;
-                                const epId = (ep.id || ep.stream_id || '').toString().trim();
-                                if (!epId) continue;
-
-                                videos.push({
-                                    id: `xc${this.idPrefix}_s_${seriesId}_e_${epId}`,
-                                    season: seasonNum,
-                                    episode: epNum,
-                                    title: ep.title || `Season ${seasonNum} - Episode ${epNum}`,
-                                    released: ep.info?.releasedate || undefined
-                                });
-                            }
-                        }
-                    }
-                }
-
-                videos.sort((a, b) => a.season - b.season || a.episode - b.episode);
+                this.log.debug('Series meta generated', {
+                    id,
+                    seriesId,
+                    hasDetails: !!details,
+                    episodesType: Array.isArray(details?.episodes) ? 'array' : typeof details?.episodes,
+                    videosCount: videos.length
+                });
 
                 const info = details?.info;
                 const rawRating = parseFloat(info?.rating);

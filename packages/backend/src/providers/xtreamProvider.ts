@@ -216,26 +216,89 @@ export async function fetchSeriesInfo(addonInstance: any, seriesId: string) {
     return await resp.json();
 }
 
+export function normalizeSeriesVideos(details: any, seriesId: string, idPrefix: string): any[] {
+    const videos: any[] = [];
+    if (!details || !details.episodes) return videos;
+
+    const episodesData = details.episodes;
+
+    const getEpId = (ep: any): string => {
+        const val = ep.id ?? ep.stream_id ?? ep.episode_id ?? ep.episodeId;
+        return val !== undefined && val !== null ? val.toString().trim() : '';
+    };
+
+    const getSeasonNum = (ep: any, fallbackSeason: number): number => {
+        const s = ep.season ?? ep.season_num ?? ep.season_number;
+        if (s !== undefined && s !== null) {
+            const parsed = parseInt(s, 10);
+            if (!isNaN(parsed)) return parsed;
+        }
+        return fallbackSeason;
+    };
+
+    const getEpisodeNum = (ep: any): number => {
+        const e = ep.episode_num ?? ep.episode ?? ep.episodeId;
+        if (e !== undefined && e !== null) {
+            const parsed = parseInt(e, 10);
+            if (!isNaN(parsed)) return parsed;
+        }
+        return 0;
+    };
+
+    if (Array.isArray(episodesData)) {
+        for (const ep of episodesData) {
+            const epId = getEpId(ep);
+            if (!epId) continue;
+            const season = getSeasonNum(ep, 1);
+            const episode = getEpisodeNum(ep);
+            videos.push({
+                id: `xc${idPrefix}_s_${seriesId}_e_${epId}`,
+                episodeStreamId: epId,
+                season,
+                episode,
+                title: ep.title || `Season ${season} - Episode ${episode}`,
+                released: ep.info?.releasedate || undefined,
+                container_extension: ep.container_extension || 'mp4'
+            });
+        }
+    } else if (typeof episodesData === 'object') {
+        for (const sKey of Object.keys(episodesData)) {
+            const fallbackSeason = parseInt(sKey, 10) || 1;
+            const episodesList = episodesData[sKey];
+            if (Array.isArray(episodesList)) {
+                for (const ep of episodesList) {
+                    const epId = getEpId(ep);
+                    if (!epId) continue;
+                    const season = getSeasonNum(ep, fallbackSeason);
+                    const episode = getEpisodeNum(ep);
+                    videos.push({
+                        id: `xc${idPrefix}_s_${seriesId}_e_${epId}`,
+                        episodeStreamId: epId,
+                        season,
+                        episode,
+                        title: ep.title || `Season ${season} - Episode ${episode}`,
+                        released: ep.info?.releasedate || undefined,
+                        container_extension: ep.container_extension || 'mp4'
+                    });
+                }
+            }
+        }
+    }
+
+    videos.sort((a, b) => a.season - b.season || a.episode - b.episode);
+    return videos;
+}
+
 const episodeCache = new WeakMap<object, Map<string, any>>();
 
 function getEpisodeMap(details: any): Map<string, any> {
     let map = episodeCache.get(details);
     if (!map) {
         map = new Map<string, any>();
-        if (details && details.episodes) {
-            for (const sKey of Object.keys(details.episodes)) {
-                const episodesList = details.episodes[sKey];
-                if (Array.isArray(episodesList)) {
-                    for (const ep of episodesList) {
-                        const epId = (ep.id || ep.stream_id || '').toString().trim();
-                        if (epId) {
-                            map.set(epId, {
-                                ...ep,
-                                season: parseInt(sKey, 10) || 1
-                            });
-                        }
-                    }
-                }
+        const normalizedVideos = normalizeSeriesVideos(details, '', '');
+        for (const video of normalizedVideos) {
+            if (video.episodeStreamId) {
+                map.set(video.episodeStreamId, video);
             }
         }
         episodeCache.set(details, map);
@@ -261,8 +324,16 @@ export async function resolveSeriesStream(addonInstance: any, seriesId: string, 
 
     const seriesName = details.info?.name || 'Series';
     const seasonStr = episode.season.toString().padStart(2, '0');
-    const epStr = (parseInt(episode.episode_num || episode.episode || '0', 10) || 0).toString().padStart(2, '0');
-    const title = `${seriesName} - S${seasonStr}E${epStr}${episode.title ? ` - ${episode.title}` : ''}`;
+    const epStr = episode.episode.toString().padStart(2, '0');
+
+    const epTitle = episode.title;
+    const isGeneric = epTitle && (
+        epTitle === `Episode ${episode.episode}` || 
+        epTitle === `Season ${episode.season} - Episode ${episode.episode}` ||
+        epTitle === `Season ${episode.season} - Episode ${episode.episode_num}`
+    );
+    const titleSuffix = epTitle && !isGeneric ? ` - ${epTitle}` : '';
+    const title = `${seriesName} - S${seasonStr}E${epStr}${titleSuffix}`;
 
     return {
         url: streamUrl,

@@ -132,6 +132,25 @@ describe('Series Playback Implementation', () => {
       expect(meta?.videos[1].released).toBe('2026-07-02');
     });
 
+    it('returns formatted series metadata when episodes is a flat array with alternative fields', async () => {
+      const addon = new M3UEPGAddon({ provider: 'xtream', xtreamUrl: 'http://xtream', xtreamUsername: 'u', xtreamPassword: 'p' });
+      addon.seriesMap.set(`xc${addon.idPrefix}_s_123`, { id: `xc${addon.idPrefix}_s_123`, seriesId: '123', name: 'Test Series' });
+
+      mockFetchSeriesInfo.mockResolvedValueOnce({
+        info: { plot: 'Flat Array Plot' },
+        episodes: [
+          { episode_id: '901', season_num: 2, episodeId: '3', title: 'Flat Episode' }
+        ]
+      });
+
+      const meta = await addon.getDetailedMeta(`xc${addon.idPrefix}_s_123`);
+      expect(meta?.videos).toHaveLength(1);
+      expect(meta?.videos[0].id).toBe(`xc${addon.idPrefix}_s_123_e_901`);
+      expect(meta?.videos[0].season).toBe(2);
+      expect(meta?.videos[0].episode).toBe(3);
+      expect(meta?.videos[0].title).toBe('Flat Episode');
+    });
+
     it('returns null/empty for invalid series ID', async () => {
       const addon = new M3UEPGAddon({ provider: 'xtream', xtreamUrl: 'http://xtream', xtreamUsername: 'u', xtreamPassword: 'p' });
       const meta = await addon.getDetailedMeta(`xc${addon.idPrefix}_s_invalid`);
