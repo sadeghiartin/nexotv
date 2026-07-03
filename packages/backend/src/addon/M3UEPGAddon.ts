@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import LRUCache from '../utils/lruCache';
 import * as sqliteCache from '../utils/sqliteCache';
 import { makeLogger } from '../utils/logger';
+import { parseId } from './idParser';
 import { parseEPG, getCurrentProgram, getUpcomingPrograms } from '../parsers/epgParser';
 import env from '../config/env';
 import * as xtreamProvider from '../providers/xtreamProvider';
@@ -419,6 +420,38 @@ export class M3UEPGAddon {
 
     async getStreams(id: string) {
         await this.ensureDataLoaded();
+        const parsed = parseId(id);
+
+        if (parsed.type === 'episode') {
+            const providerModule = PROVIDER_MAP[this.providerName];
+            if (providerModule && (providerModule as any).resolveSeriesStream) {
+                try {
+                    const resolved = await (providerModule as any).resolveSeriesStream(this, parsed.seriesId, parsed.episodeId);
+                    if (resolved) {
+                        const seriesItem = this.seriesMap.get(`xc${this.idPrefix}_s_${parsed.seriesId}`);
+                        const reqHeaders: Record<string, string> = {};
+                        const userAgent = seriesItem?.userAgent || this.config.globalUserAgent;
+                        const referrer = seriesItem?.referrer;
+                        if (userAgent) reqHeaders['User-Agent'] = userAgent;
+                        if (referrer)  reqHeaders['Referer']    = referrer;
+
+                        const behaviorHints = Object.keys(reqHeaders).length
+                            ? { notWebReady: true, proxyHeaders: { request: reqHeaders } }
+                            : { notWebReady: true };
+
+                        return [{
+                            url: resolved.url,
+                            title: resolved.title,
+                            behaviorHints
+                        }];
+                    }
+                } catch (e: any) {
+                    this.log.error('Failed to resolve series stream', { id, error: e.message });
+                }
+            }
+            return [];
+        }
+
         const item = this.channelMap.get(id) || this.movieMap.get(id);
         if (!item) return [];
 
@@ -452,7 +485,7 @@ export class M3UEPGAddon {
             streams.unshift({
                 url: item.url + '.m3u8',
                 title: `${item.name} - HLS`,
-                behaviorHints,
+                behaviorHints
             });
         }
 
@@ -461,108 +494,120 @@ export class M3UEPGAddon {
 
     async getDetailedMeta(id: string) {
         await this.ensureDataLoaded();
-        const seriesItem = this.seriesMap.get(id);
-        if (seriesItem) {
-            const logoUrl = this.deriveFallbackLogoUrl(seriesItem);
-            // Compatibility with caches created before Phase 3C.
-            // Remove after cache schema version bump.
-            const seriesId = seriesItem.seriesId || id.match(/_s_([^_]+)/)?.[1];
-            const details = await this.getSeriesInfoCached(seriesId);
-            const videos: any[] = [];
+        const parsed = parseId(id);
 
-            if (details && details.episodes) {
-                for (const sKey of Object.keys(details.episodes)) {
-                    const seasonNum = parseInt(sKey, 10) || 1;
-                    const episodesList = details.episodes[sKey];
-                    if (Array.isArray(episodesList)) {
-                        for (const ep of episodesList) {
-                            const epNum = parseInt(ep.episode_num || ep.episode || '0', 10) || 0;
-                            const epId = (ep.id || ep.stream_id || '').toString().trim();
-                            if (!epId) continue;
+        if (parsed.type === 'series') {
+            const seriesItem = this.seriesMap.get(id);
+            if (seriesItem) {
+                const logoUrl = this.deriveFallbackLogoUrl(seriesItem);
+                // Compatibility with caches created before Phase 3C.
+                // Remove after cache schema version bump.
+                const seriesId = seriesItem.seriesId || parsed.seriesId;
+                const details = await this.getSeriesInfoCached(seriesId);
+                const videos: any[] = [];
 
-                            videos.push({
-                                id: `xc${this.idPrefix}_s_${seriesId}_e_${epId}`,
-                                season: seasonNum,
-                                episode: epNum,
-                                title: ep.title || `Season ${seasonNum} - Episode ${epNum}`,
-                                released: ep.info?.releasedate || undefined
-                            });
+                if (details && details.episodes) {
+                    for (const sKey of Object.keys(details.episodes)) {
+                        const seasonNum = parseInt(sKey, 10) || 1;
+                        const episodesList = details.episodes[sKey];
+                        if (Array.isArray(episodesList)) {
+                            for (const ep of episodesList) {
+                                const epNum = parseInt(ep.episode_num || ep.episode || '0', 10) || 0;
+                                const epId = (ep.id || ep.stream_id || '').toString().trim();
+                                if (!epId) continue;
+
+                                videos.push({
+                                    id: `xc${this.idPrefix}_s_${seriesId}_e_${epId}`,
+                                    season: seasonNum,
+                                    episode: epNum,
+                                    title: ep.title || `Season ${seasonNum} - Episode ${epNum}`,
+                                    released: ep.info?.releasedate || undefined
+                                });
+                            }
                         }
                     }
                 }
+
+                videos.sort((a, b) => a.season - b.season || a.episode - b.episode);
+
+                const info = details?.info;
+                const rawRating = parseFloat(info?.rating);
+
+                return {
+                    id: seriesItem.id,
+                    type: 'series',
+                    name: seriesItem.name,
+                    poster: logoUrl,
+                    background: logoUrl,
+                    posterShape: 'poster',
+                    description: info?.plot || `📺 SERIES: ${seriesItem.name}\n\nCategory: ${seriesItem.category || 'Series'}`,
+                    genres: seriesItem.category
+                        ? [seriesItem.category]
+                        : (seriesItem.attributes?.['group-title'] ? [seriesItem.attributes['group-title']] : ['Series']),
+                    runtime: 'Series',
+                    rating: isNaN(rawRating) ? undefined : rawRating,
+                    videos
+                };
             }
+        }
 
-            videos.sort((a, b) => a.season - b.season || a.episode - b.episode);
+        if (parsed.type === 'movie') {
+            const movieItem = this.movieMap.get(id);
+            if (movieItem) {
+                const logoUrl = this.deriveFallbackLogoUrl(movieItem);
+                return {
+                    id: movieItem.id,
+                    type: 'movie',
+                    name: movieItem.name,
+                    poster: logoUrl,
+                    background: logoUrl,
+                    posterShape: 'poster',
+                    description: `🎬 MOVIE: ${movieItem.name}\n\nCategory: ${movieItem.category || 'Movie'}`,
+                    genres: movieItem.category
+                        ? [movieItem.category]
+                        : (movieItem.attributes?.['group-title'] ? [movieItem.attributes['group-title']] : ['Movies']),
+                    runtime: 'Movie'
+                };
+            }
+        }
 
-            const info = details?.info;
-            const rawRating = parseFloat(info?.rating);
-
+        if (parsed.type === 'channel') {
+            await this.ensureEpgLoaded();
+            const item = this.channelMap.get(id);
+            if (!item) return null;
+            const epgId = item.attributes?.['tvg-id'] || item.attributes?.['tvg-name'];
+            const current = getCurrentProgram(this.epgData, epgId, this.config.epgOffsetHours as number);
+            const upcoming = getUpcomingPrograms(this.epgData, epgId, 3, this.config.epgOffsetHours as number);
+            let description = `📺 CHANNEL: ${item.name}`;
+            if (current) {
+                const start = current.startTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '';
+                const end = current.stopTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '';
+                description += `\n\n📡 NOW: ${current.title}${start && end ? ` (${start}-${end})` : ''}`;
+                if (current.description) description += `\n\n${current.description}`;
+            }
+            if (upcoming.length) {
+                description += '\n\n📅 UPCOMING:\n';
+                for (const p of upcoming) {
+                    description += `${p.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${p.title}\n`;
+                }
+            }
+            const logoUrl = this.deriveFallbackLogoUrl(item);
             return {
-                id: seriesItem.id,
-                type: 'series',
-                name: seriesItem.name,
+                id: item.id,
+                type: 'tv',
+                name: item.name,
                 poster: logoUrl,
                 background: logoUrl,
                 posterShape: 'poster',
-                description: info?.plot || `📺 SERIES: ${seriesItem.name}\n\nCategory: ${seriesItem.category || 'Series'}`,
-                genres: seriesItem.category
-                    ? [seriesItem.category]
-                    : (seriesItem.attributes?.['group-title'] ? [seriesItem.attributes['group-title']] : ['Series']),
-                runtime: 'Series',
-                rating: isNaN(rawRating) ? undefined : rawRating,
-                videos
+                description,
+                genres: item.category
+                    ? [item.category]
+                    : (item.attributes?.['group-title'] ? [item.attributes['group-title']] : ['Live TV']),
+                runtime: 'Live'
             };
         }
-        const movieItem = this.movieMap.get(id);
-        if (movieItem) {
-            const logoUrl = this.deriveFallbackLogoUrl(movieItem);
-            return {
-                id: movieItem.id,
-                type: 'movie',
-                name: movieItem.name,
-                poster: logoUrl,
-                background: logoUrl,
-                posterShape: 'poster',
-                description: `🎬 MOVIE: ${movieItem.name}\n\nCategory: ${movieItem.category || 'Movie'}`,
-                genres: movieItem.category
-                    ? [movieItem.category]
-                    : (movieItem.attributes?.['group-title'] ? [movieItem.attributes['group-title']] : ['Movies']),
-                runtime: 'Movie'
-            };
-        }
-        await this.ensureEpgLoaded();
-        const item = this.channelMap.get(id);
-        if (!item) return null;
-        const epgId = item.attributes?.['tvg-id'] || item.attributes?.['tvg-name'];
-        const current = getCurrentProgram(this.epgData, epgId, this.config.epgOffsetHours as number);
-        const upcoming = getUpcomingPrograms(this.epgData, epgId, 3, this.config.epgOffsetHours as number);
-        let description = `📺 CHANNEL: ${item.name}`;
-        if (current) {
-            const start = current.startTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '';
-            const end = current.stopTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '';
-            description += `\n\n📡 NOW: ${current.title}${start && end ? ` (${start}-${end})` : ''}`;
-            if (current.description) description += `\n\n${current.description}`;
-        }
-        if (upcoming.length) {
-            description += '\n\n📅 UPCOMING:\n';
-            for (const p of upcoming) {
-                description += `${p.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${p.title}\n`;
-            }
-        }
-        const logoUrl = this.deriveFallbackLogoUrl(item);
-        return {
-            id: item.id,
-            type: 'tv',
-            name: item.name,
-            poster: logoUrl,
-            background: logoUrl,
-            posterShape: 'poster',
-            description,
-            genres: item.category
-                ? [item.category]
-                : (item.attributes?.['group-title'] ? [item.attributes['group-title']] : ['Live TV']),
-            runtime: 'Live'
-        };
+
+        return null;
     }
 
     _resetEvictTimer() {

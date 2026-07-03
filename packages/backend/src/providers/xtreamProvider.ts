@@ -215,3 +215,57 @@ export async function fetchSeriesInfo(addonInstance: any, seriesId: string) {
     if (!resp.ok) throw new Error(`Xtream series info fetch failed: HTTP ${resp.status}`);
     return await resp.json();
 }
+
+const episodeCache = new WeakMap<object, Map<string, any>>();
+
+function getEpisodeMap(details: any): Map<string, any> {
+    let map = episodeCache.get(details);
+    if (!map) {
+        map = new Map<string, any>();
+        if (details && details.episodes) {
+            for (const sKey of Object.keys(details.episodes)) {
+                const episodesList = details.episodes[sKey];
+                if (Array.isArray(episodesList)) {
+                    for (const ep of episodesList) {
+                        const epId = (ep.id || ep.stream_id || '').toString().trim();
+                        if (epId) {
+                            map.set(epId, {
+                                ...ep,
+                                season: parseInt(sKey, 10) || 1
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        episodeCache.set(details, map);
+    }
+    return map;
+}
+
+export async function resolveSeriesStream(addonInstance: any, seriesId: string, episodeStreamId: string): Promise<{ url: string; title: string }> {
+    const details = await addonInstance.getSeriesInfoCached(seriesId);
+    if (!details || !details.episodes) {
+        throw new Error(`Series details not found for seriesId: ${seriesId}`);
+    }
+
+    const episodeMap = getEpisodeMap(details);
+    const episode = episodeMap.get(episodeStreamId);
+    if (!episode) {
+        throw new Error(`Episode not found: ${episodeStreamId}`);
+    }
+
+    const ext = episode.container_extension || 'mp4';
+    const { xtreamUrl, xtreamUsername, xtreamPassword } = addonInstance.config;
+    const streamUrl = `${xtreamUrl}/series/${xtreamUsername}/${xtreamPassword}/${episodeStreamId}.${ext}`;
+
+    const seriesName = details.info?.name || 'Series';
+    const seasonStr = episode.season.toString().padStart(2, '0');
+    const epStr = (parseInt(episode.episode_num || episode.episode || '0', 10) || 0).toString().padStart(2, '0');
+    const title = `${seriesName} - S${seasonStr}E${epStr}${episode.title ? ` - ${episode.title}` : ''}`;
+
+    return {
+        url: streamUrl,
+        title
+    };
+}
