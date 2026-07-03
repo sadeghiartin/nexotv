@@ -58,18 +58,10 @@ describe('cryptoConfig with CONFIG_SECRET enabled', () => {
   });
 
   describe('tryParseConfigToken', () => {
-    it('parses plain base64url token', () => {
+    it('rejects plain base64url token when CONFIG_SECRET is set', () => {
       const obj = { provider: 'xtream', url: 'http://example.com' };
       const token = Buffer.from(JSON.stringify(obj)).toString('base64url');
-      expect(tryParseConfigToken(token)).toEqual(obj);
-    });
-
-    it('parses base64url with URL-safe chars (- and _)', () => {
-      // base64url never contains + or / — verify the round-trip still works
-      const obj = { a: 1, b: 2, c: 3, d: 4, e: 5 };
-      const token = Buffer.from(JSON.stringify(obj)).toString('base64url');
-      expect(token).not.toMatch(/[+/]/);
-      expect(tryParseConfigToken(token)).toEqual(obj);
+      expect(() => tryParseConfigToken(token)).toThrow('Encryption required: unencrypted configuration tokens are disabled');
     });
 
     it('decrypts enc: token when CONFIG_SECRET matches', () => {
@@ -78,24 +70,12 @@ describe('cryptoConfig with CONFIG_SECRET enabled', () => {
       expect(tryParseConfigToken(token)).toEqual(obj);
     });
 
-    it('throws on malformed base64', () => {
-      expect(() => tryParseConfigToken('!!!!!')).toThrow();
+    it('throws encryption required error for malformed non-encrypted token', () => {
+      expect(() => tryParseConfigToken('!!!!!')).toThrow('Encryption required: unencrypted configuration tokens are disabled');
     });
 
-    it('throws on valid base64 but invalid JSON', () => {
-      const token = Buffer.from('this is not json').toString('base64');
-      expect(() => tryParseConfigToken(token)).toThrow('Invalid JSON config');
-    });
-  });
-
-  describe('base64url edge cases', () => {
-    it('handles padding remainder 0, 1, 2', () => {
-      // Payloads of varying lengths produce different padding in base64
-      const objs = [{ a: 1 }, { ab: 12 }, { abc: 123 }];
-      for (const obj of objs) {
-        const token = Buffer.from(JSON.stringify(obj)).toString('base64url');
-        expect(tryParseConfigToken(token)).toEqual(obj);
-      }
+    it('throws on empty token', () => {
+      expect(() => tryParseConfigToken('')).toThrow('Empty token');
     });
   });
 });
@@ -105,6 +85,7 @@ describe('cryptoConfig with CONFIG_SECRET enabled', () => {
 describe('cryptoConfig without CONFIG_SECRET', () => {
   let encryptConfig: (s: string) => string | null;
   let decryptConfig: (s: string) => any;
+  let tryParseConfigToken: (s: string) => any;
 
   beforeAll(async () => {
     vi.resetModules();
@@ -115,6 +96,7 @@ describe('cryptoConfig without CONFIG_SECRET', () => {
     const mod = await import('../../src/utils/cryptoConfig');
     encryptConfig = mod.encryptConfig;
     decryptConfig = mod.decryptConfig;
+    tryParseConfigToken = mod.tryParseConfigToken;
   });
 
   afterAll(() => {
@@ -128,6 +110,40 @@ describe('cryptoConfig without CONFIG_SECRET', () => {
 
   it('throws when decryptConfig receives enc: token without CONFIG_SECRET', () => {
     expect(() => decryptConfig('enc:somepayload')).toThrow('Encryption disabled');
+  });
+
+  it('parses plain base64url token when CONFIG_SECRET is absent', () => {
+    const obj = { provider: 'xtream', url: 'http://example.com' };
+    const token = Buffer.from(JSON.stringify(obj)).toString('base64url');
+    expect(tryParseConfigToken(token)).toEqual(obj);
+  });
+
+  it('parses base64url with URL-safe chars (- and _) when CONFIG_SECRET is absent', () => {
+    const obj = { a: 1, b: 2, c: 3, d: 4, e: 5 };
+    const token = Buffer.from(JSON.stringify(obj)).toString('base64url');
+    expect(token).not.toMatch(/[+/]/);
+    expect(tryParseConfigToken(token)).toEqual(obj);
+  });
+
+  it('throws on empty token', () => {
+    expect(() => tryParseConfigToken('')).toThrow('Empty token');
+  });
+
+  it('throws on malformed base64 when CONFIG_SECRET is absent', () => {
+    expect(() => tryParseConfigToken('!!!!!')).toThrow();
+  });
+
+  it('throws on valid base64 but invalid JSON when CONFIG_SECRET is absent', () => {
+    const token = Buffer.from('this is not json').toString('base64');
+    expect(() => tryParseConfigToken(token)).toThrow('Invalid JSON config');
+  });
+
+  it('handles padding remainder 0, 1, 2 when CONFIG_SECRET is absent', () => {
+    const objs = [{ a: 1 }, { ab: 12 }, { abc: 123 }];
+    for (const obj of objs) {
+      const token = Buffer.from(JSON.stringify(obj)).toString('base64url');
+      expect(tryParseConfigToken(token)).toEqual(obj);
+    }
   });
 });
 

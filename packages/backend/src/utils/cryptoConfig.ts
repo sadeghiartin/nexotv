@@ -62,6 +62,10 @@ export function tryParseConfigToken(token: string) {
     if (!token) throw new Error('Empty token');
     if (token.startsWith('enc:')) return decryptConfig(token);
 
+    if (getSecret()) {
+        throw new Error('Encryption required: unencrypted configuration tokens are disabled');
+    }
+
     // Normalize base64url -> base64
     let base = token.replace(/-/g, '+').replace(/_/g, '/');
     // Re-pad
